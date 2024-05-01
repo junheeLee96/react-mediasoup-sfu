@@ -12,6 +12,7 @@ const MeetRoom = () => {
   const consumerTransport = useRef<any>(null);
   const producer = useRef<any>(null);
   const consumer = useRef<any>(null);
+  const isProducer = useRef<any>(false);
   const params = useRef<any>({
     // mediasoup params
     encodings: [
@@ -37,84 +38,62 @@ const MeetRoom = () => {
     },
   });
 
-  const connectRecvTransport = async () => {
-    await socket.current.emit(
-      "consume",
-      {
-        rtpCapabilities: device.current.rtpCapabilities,
-      },
-      async ({ params }: any) => {
-        if (params.error) {
-          console.log("Cannot Consume");
-          return;
-        }
+  const streamSuccess = (stream: MediaStream) => {
+    localVideo.current.srcObject = stream;
+    const track = stream.getVideoTracks()[0];
 
-        console.log(params);
-        // then consume with the local consumer transport
-        // which creates a consumer
-        consumer.current = await consumerTransport.current.consume({
-          id: params.id,
-          producerId: params.producerId,
-          kind: params.kind,
-          rtpParameters: params.rtpParameters,
-        });
+    params.current = {
+      ...params.current,
+      track,
+    };
 
-        // destructure and retrieve the video track from the producer
-        const { track } = consumer.current;
-        console.log(track);
-        remoteVideo.current.srcObject = new MediaStream([track]);
+    console.log("steram succ");
 
-        // the server consumer started with media paused
-        // so we need to inform the server to resume
-        socket.current.emit("consumer-resume");
-      }
-    );
+    goConnect(true);
   };
 
-  const createRecvTransport = async () => {
-    await socket.current.emit(
-      "createWebRtcTransport",
-      { sender: false },
-      ({ params }: any) => {
-        if (params.error) {
-          console.error(params.error);
-          return;
-        }
+  const getLocalStream = () => {
+    console.log("golocal");
 
-        consumerTransport.current = device.current.createRecvTransport(params);
-        consumerTransport.current.on(
-          "connect",
-          async ({ dtlsParameters }: any, callback: any, errback: any) => {
-            try {
-              // Signal local DTLS parameters to the server side transport
-              // see server's socket.on('transport-recv-connect', ...)
-              await socket.current.emit("transport-recv-connect", {
-                dtlsParameters,
-              });
-
-              // Tell the transport that parameters were transmitted.
-              callback();
-            } catch (error) {
-              // Tell the transport that something was wrong
-              errback(error);
-            }
-          }
-        );
-      }
-    );
+    navigator.mediaDevices
+      .getUserMedia({ audio: false, video: true })
+      .then(streamSuccess);
+  };
+  const goConsume = () => {
+    goConnect(false);
   };
 
-  const connectSendTransport = async () => {
-    console.log(producerTransport.current, params.current);
-    // return;
-    producer.current = await producerTransport.current.produce(params.current);
-    // console.log(producer.current);
-    producer.current.on("trackended", () => {
-      console.log("track ended");
-    });
+  const goConnect = (producerOrConsumer: any) => {
+    console.log("goconnect", producerOrConsumer);
+    isProducer.current = producerOrConsumer;
+    console.log(device.current);
+    !device.current ? getRtpCapabilities() : goCreateTransport();
+  };
 
-    producer.current.on("transportclose", () => {
-      console.log("transport ended");
+  const goCreateTransport = () => {
+    isProducer.current ? createSendTransport() : createRecvTransport();
+  };
+
+  const createDevice = async () => {
+    try {
+      device.current = new Device();
+      await device.current.load({
+        routerRtpCapabilities: rtpCapabilities.current,
+      });
+      console.log(`device.current = `, device.current);
+      goCreateTransport();
+    } catch (e) {
+      console.error(e);
+      // if(e.name ==='')
+    }
+  };
+
+  const getRtpCapabilities = () => {
+    console.log("gggg");
+    socket.current.emit("createRoom", (data: any) => {
+      rtpCapabilities.current = data.rtpCapabilities;
+      console.log(`rtpCapabilities`, rtpCapabilities.current);
+      createDevice();
     });
   };
 
@@ -127,6 +106,7 @@ const MeetRoom = () => {
           console.error(params);
           return;
         }
+        console.log(device.current);
         producerTransport.current = device.current.createSendTransport(params);
         producerTransport.current.on(
           "connect",
@@ -165,45 +145,91 @@ const MeetRoom = () => {
             }
           }
         );
+        connectSendTransport();
       }
     );
   };
 
-  const streamSuccess = (stream: MediaStream) => {
-    localVideo.current.srcObject = stream;
-    const track = stream.getVideoTracks()[0];
+  const connectSendTransport = async () => {
+    console.log(producerTransport.current, params.current);
+    // return;
+    producer.current = await producerTransport.current.produce(params.current);
+    // console.log(producer.current);
+    producer.current.on("trackended", () => {
+      console.log("track ended");
+    });
 
-    params.current = {
-      ...params.current,
-      track,
-    };
-  };
-
-  const createDevice = async () => {
-    try {
-      device.current = new Device();
-      await device.current.load({
-        routerRtpCapabilities: rtpCapabilities.current,
-      });
-      console.log(`device.current = `, device.current);
-      console.log("rtp!!", rtpCapabilities.current);
-    } catch (e) {
-      console.error(e);
-      // if(e.name ==='')
-    }
-  };
-
-  const getRtpCapabilities = () => {
-    socket.current.emit("getRtpCapabilities", (data: any) => {
-      rtpCapabilities.current = data.rtpCapabilities;
-      console.log(`rtpCapabilities`, rtpCapabilities.current);
+    producer.current.on("transportclose", () => {
+      console.log("transport ended");
     });
   };
 
-  const getLocalStream = () => {
-    navigator.mediaDevices
-      .getUserMedia({ audio: false, video: true })
-      .then(streamSuccess);
+  const createRecvTransport = async () => {
+    await socket.current.emit(
+      "createWebRtcTransport",
+      { sender: false },
+      ({ params }: any) => {
+        if (params.error) {
+          console.error(params.error);
+          return;
+        }
+
+        consumerTransport.current = device.current.createRecvTransport(params);
+        consumerTransport.current.on(
+          "connect",
+          async ({ dtlsParameters }: any, callback: any, errback: any) => {
+            try {
+              // Signal local DTLS parameters to the server side transport
+              // see server's socket.on('transport-recv-connect', ...)
+              await socket.current.emit("transport-recv-connect", {
+                dtlsParameters,
+              });
+
+              // Tell the transport that parameters were transmitted.
+              callback();
+            } catch (error) {
+              // Tell the transport that something was wrong
+              errback(error);
+            }
+          }
+        );
+        connectRecvTransport();
+      }
+    );
+  };
+
+  const connectRecvTransport = async () => {
+    await socket.current.emit(
+      "consume",
+      {
+        rtpCapabilities: device.current.rtpCapabilities,
+      },
+      async ({ params }: any) => {
+        if (params.error) {
+          console.log("Cannot Consume");
+          return;
+        }
+
+        console.log(params);
+        // then consume with the local consumer transport
+        // which creates a consumer
+        consumer.current = await consumerTransport.current.consume({
+          id: params.id,
+          producerId: params.producerId,
+          kind: params.kind,
+          rtpParameters: params.rtpParameters,
+        });
+
+        // destructure and retrieve the video track from the producer
+        const { track } = consumer.current;
+        console.log(track);
+        remoteVideo.current.srcObject = new MediaStream([track]);
+
+        // the server consumer started with media paused
+        // so we need to inform the server to resume
+        socket.current.emit("consumer-resume");
+      }
+    );
   };
 
   useEffect(() => {
@@ -214,7 +240,9 @@ const MeetRoom = () => {
     <div>
       <video ref={localVideo} autoPlay playsInline />
       <video ref={remoteVideo} autoPlay playsInline />
-      <button onClick={getLocalStream}>Get local Video</button>
+      <button onClick={getLocalStream}>Publish</button>
+      <button onClick={goConsume}>Consume</button>
+      {/* <button onClick={getLocalStream}>Get local Video</button>
       <button onClick={getRtpCapabilities}>Get TRP Capabilites</button>
       <button onClick={createDevice}>Create Device</button>
       <button onClick={createSendTransport}>Create Send Transport</button>
@@ -224,7 +252,7 @@ const MeetRoom = () => {
       <button onClick={createRecvTransport}>Create Recv Transport</button>
       <button onClick={connectRecvTransport}>
         Connect Recv Transport & Consume
-      </button>
+      </button> */}
     </div>
   );
 };

@@ -94,6 +94,7 @@ peers.on("connection", async (socket) => {
   console.log(socket.id);
   socket.emit("connection-success", {
     socketId: socket.id,
+    existsProducer: producer ? true : false,
   });
 
   socket.on("disconnect", () => {
@@ -101,13 +102,24 @@ peers.on("connection", async (socket) => {
     console.log("peer disconnected");
   });
 
-  // worker.createRouter(options)
-  // options = { mediaCodecs, appData }
-  // mediaCodecs -> defined above
-  // appData -> custom application data - we are not supplying any
-  // none of the two are required
-  router = await worker.createRouter({ mediaCodecs });
+  socket.on("createRoom", async (callback) => {
+    if (router === undefined) {
+      // worker.createRouter(options)
+      // options = { mediaCodecs, appData }
+      // mediaCodecs -> defined above
+      // appData -> custom application data - we are not supplying any
+      // none of the two are required
+      router = await worker.createRouter({ mediaCodecs });
+    }
 
+    getRtpCapabilities(callback);
+  });
+
+  const getRtpCapabilities = (callback) => {
+    const rtpCapabilities = router.rtpCapabilities;
+    callback({ rtpCapabilities });
+  };
+  // router = await worker.createRouter({ mediaCodecs });
   // Client emits a request for RTP Capabilities
   // This event responds to the request
   socket.on("getRtpCapabilities", (callback) => {
