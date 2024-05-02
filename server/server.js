@@ -108,8 +108,7 @@ connections.on("connection", async (socket) => {
   };
 
   socket.on("disconnect", () => {
-    // do some cleanup
-    console.log("peer disconnected");
+    // user left room
     consumers = removeItems(consumers, socket.id, "consumer");
     producers = removeItems(producers, socket.id, "producer");
     transports = removeItems(transports, socket.id, "transport");
@@ -175,26 +174,6 @@ connections.on("connection", async (socket) => {
 
     return router1;
   };
-
-  // socket.on('createRoom', async (callback) => {
-  //   if (router === undefined) {
-  //     // worker.createRouter(options)
-  //     // options = { mediaCodecs, appData }
-  //     // mediaCodecs -> defined above
-  //     // appData -> custom application data - we are not supplying any
-  //     // none of the two are required
-  //     router = await worker.createRouter({ mediaCodecs, })
-  //     console.log(`Router ID: ${router.id}`)
-  //   }
-
-  //   getRtpCapabilities(callback)
-  // })
-
-  // const getRtpCapabilities = (callback) => {
-  //   const rtpCapabilities = router.rtpCapabilities
-
-  //   callback({ rtpCapabilities })
-  // }
 
   // Client emits a request to create server side Transport
   // We need to differentiate between the producer and consumer transports

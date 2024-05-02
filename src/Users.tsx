@@ -15,11 +15,22 @@ const Users = ({ user, id }: any) => {
     }
   }, []);
   return (
-    <div id={`remote-video ${id}`}>
+    <div>
       {user.stream.getVideoTracks() ? (
-        <video ref={videoRef} autoPlay playsInline muted={true} />
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted={true}
+          style={{ width: "100%" }}
+        />
       ) : (
-        <audio ref={audioRef} autoPlay muted={true} />
+        <audio
+          ref={audioRef}
+          autoPlay
+          muted={true}
+          style={{ opacity: "0", width: "0px" }}
+        />
       )}
     </div>
   );
