@@ -91,11 +91,6 @@ const mediaCodecs = [
 ];
 
 connections.on("connection", async (socket) => {
-  console.log(socket.id);
-  socket.emit("connection-success", {
-    socketId: socket.id,
-  });
-
   const removeItems = (items, socketId, type) => {
     items.forEach((item) => {
       if (item.socketId === socket.id) {

@@ -52,7 +52,7 @@ const useInitialConfig = ({ stream }: { stream: MediaStream | null }) => {
   const videoProducer = useRef<any>(null);
   const audioParams = useRef<any>(null);
   const videoParams = useRef<any>({ ...params.current });
-  const consumingTransports = useRef<any>([]);
+  const consumingTransports = useRef<string[]>([]);
 
   const streamSuccess = (stream: MediaStream) => {
     audioParams.current = {
@@ -63,7 +63,6 @@ const useInitialConfig = ({ stream }: { stream: MediaStream | null }) => {
       track: stream.getVideoTracks()[0],
       ...videoParams.current,
     };
-
     joinRoom();
   };
 
@@ -73,9 +72,7 @@ const useInitialConfig = ({ stream }: { stream: MediaStream | null }) => {
       "joinRoom",
       { roomName },
       (data: { rtpCapabilities: rtpCapabilitesType }) => {
-        // console.log(`Router Rtp Capa`)
         rtpCapabilities.current = data.rtpCapabilities;
-
         createDevice();
       }
     );
@@ -84,19 +81,14 @@ const useInitialConfig = ({ stream }: { stream: MediaStream | null }) => {
   const createDevice = async () => {
     if (!rtpCapabilities.current) return;
     try {
+      //디바이스 생성
+      // 서버의 rtpCapabilities로 device load
       device.current = new Device();
-
-      // https://mediasoup.org/documentation/v3/mediasoup-client/api/#device-load
-      // Loads the device with RTP capabilities of the Router (server side)
       await device.current.load({
-        // see getRtpCapabilities() below
         routerRtpCapabilities: rtpCapabilities.current,
       });
-
-      // once the device loads, create transport
       createSendTransport();
     } catch (error: any) {
-      console.log(error);
       if (error.name === "UnsupportedError")
         console.warn("browser not supported");
     }
@@ -105,8 +97,7 @@ const useInitialConfig = ({ stream }: { stream: MediaStream | null }) => {
   const createSendTransport = () => {
     if (!socket.current) return;
 
-    // see server's socket.on('createWebRtcTransport', sender?, ...)
-    // this is a call from Producer, so sender = true
+    // create sender Transport
     socket.current.emit(
       "createWebRtcTransport",
       { consumer: false },
@@ -120,13 +111,10 @@ const useInitialConfig = ({ stream }: { stream: MediaStream | null }) => {
         if (!device.current) return;
 
         // creates a new WebRTC Transport to send media
-        // based on the server's producer transport params
-        // https://mediasoup.org/documentation/v3/mediasoup-client/api/#TransportOptions
         producerTransport.current = device.current.createSendTransport(params);
 
-        // https://mediasoup.org/documentation/v3/communication-between-client-and-server/#producing-media
-        // this event is raised when a first call to transport.produce() is made
-        // see connectSendTransport() below
+        // transport.produce이벤트 처음 호출 시 발동되는 이벤트 등록
+
         producerTransport.current.on(
           "connect",
           async (
@@ -136,13 +124,9 @@ const useInitialConfig = ({ stream }: { stream: MediaStream | null }) => {
           ) => {
             if (!socket.current) return;
             try {
-              // Signal local DTLS parameters to the server side transport
-              // see server's socket.on('transport-connect', ...)
               await socket.current.emit("transport-connect", {
                 dtlsParameters,
               });
-
-              // Tell the transport that parameters were transmitted.
               callback();
             } catch (error) {
               errback(error);
@@ -159,7 +143,6 @@ const useInitialConfig = ({ stream }: { stream: MediaStream | null }) => {
               // tell the server to create a Producer
               // with the following parameters and produce
               // and expect back a server side producer id
-              // see server's socket.on('transport-produce', ...)
               await socket.current.emit(
                 "transport-produce",
                 {
@@ -174,11 +157,7 @@ const useInitialConfig = ({ stream }: { stream: MediaStream | null }) => {
                   id: string;
                   producersExist: boolean;
                 }) => {
-                  // Tell the transport that parameters were transmitted and provide it with the
-                  // server side producer's id.
                   callback({ id });
-
-                  // if producers exist, then join room
                   if (producersExist) getProducers();
                 }
               );
@@ -197,18 +176,15 @@ const useInitialConfig = ({ stream }: { stream: MediaStream | null }) => {
     if (!socket.current) return;
     socket.current.emit("getProducers", (producerIds: Array<string>) => {
       // for each of the producer create a consumer
-      // producerIds.forEach(id => signalNewConsumerTransport(id))
       producerIds.forEach(signalNewConsumerTransport);
     });
   };
 
   const connectSendTransport = async () => {
     if (!producerTransport.current) return;
-    // we now call produce() to instruct the producer transport
-    // to send media to the Router
-    // https://mediasoup.org/documentation/v3/mediasoup-client/api/#transport-produce
-    // this action will trigger the 'connect' and 'produce' events above
-
+    // procue()호출
+    //producer transport로 미디어를 서버로 전송
+    //connect produce 트리거
     audioProducer.current = await producerTransport.current.produce(
       audioParams.current
     );
@@ -244,21 +220,14 @@ const useInitialConfig = ({ stream }: { stream: MediaStream | null }) => {
       "createWebRtcTransport",
       { consumer: true },
       ({ params }: any) => {
-        // The server sends back params needed
-        // to create Send Transport on the client side
         if (params.error) {
-          console.log(params.error);
           return;
         }
-        console.log(`PARAMS... ${params}`);
         if (!device.current) return;
         let consumerTransport;
         try {
           consumerTransport = device.current.createRecvTransport(params);
         } catch (error) {
-          // exceptions:
-          // {InvalidStateError} if not loaded
-          // {TypeError} if wrong arguments.
           console.log(error);
           return;
         }
@@ -268,22 +237,16 @@ const useInitialConfig = ({ stream }: { stream: MediaStream | null }) => {
           async ({ dtlsParameters }: any, callback: any, errback: any) => {
             if (!socket.current) return;
             try {
-              // Signal local DTLS parameters to the server side transport
-              // see server's socket.on('transport-recv-connect', ...)
               await socket.current.emit("transport-recv-connect", {
                 dtlsParameters,
                 serverConsumerTransportId: params.id,
               });
-
-              // Tell the transport that parameters were transmitted.
               callback();
             } catch (error) {
-              // Tell the transport that something was wrong
               errback(error);
             }
           }
         );
-
         connectRecvTransport(consumerTransport, remoteProducerId, params.id);
       }
     );
@@ -296,9 +259,9 @@ const useInitialConfig = ({ stream }: { stream: MediaStream | null }) => {
   ) => {
     if (!device.current) return;
     if (!socket.current) return;
-    // for consumer, we need to tell the server first
-    // to create a consumer based on the rtpCapabilities and consume
-    // if the router can consume, it will send back a set of params as below
+    // consumer의 경우
+    //서버에서 rtpCapabilities를 기반으로 consumer 생성
+    //and return this parameters
     await socket.current.emit(
       "consume",
       {
@@ -312,9 +275,8 @@ const useInitialConfig = ({ stream }: { stream: MediaStream | null }) => {
           return;
         }
         if (!consumerTransports.current) return;
-        console.log(consumerTransports.current, producerTransport.current);
-        // then consume with the local consumer transport
-        // which creates a consumer
+        // 로컬 consumer transport consume
+        // it will create consumer
         const consumer = await consumerTransport.consume({
           id: params.id,
           producerId: params.producerId,
@@ -331,12 +293,7 @@ const useInitialConfig = ({ stream }: { stream: MediaStream | null }) => {
             consumer,
           },
         ];
-        console.log("consumerTransports.current, ", consumerTransports.current);
-        // create a new div element for the new consumer media
-        // const newElem = document.createElement("div");
-        // newElem.setAttribute("id", `td-${remoteProducerId}`);
 
-        // destructure and retrieve the video track from the producer
         const { track } = consumer;
         const stream: MediaStream = new MediaStream([track]);
 
@@ -364,18 +321,14 @@ const useInitialConfig = ({ stream }: { stream: MediaStream | null }) => {
 
   useEffect(() => {
     socket.current = io("https://localhost:8000/mediasoup");
-    socket.current.on(
-      "connection-success",
-      ({ socketId, existsProducer }: any) => {
-        // getLocalStream();
-      }
-    );
 
     socket.current.on("new-producer", ({ producerId }: any) => {
       signalNewConsumerTransport(producerId);
     });
 
     socket.current.on("producer-closed", ({ remoteProducerId }: any) => {
+      //when 유저 left
+      // clean up
       if (!consumerTransports.current) return;
       const copyUsers = { ...usersRef.current };
       delete copyUsers[remoteProducerId];
