@@ -1,11 +1,12 @@
 import { Device } from "mediasoup-client";
 import { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
+import Users from "./Users";
 const roomName = 123;
 const MeetRoom = () => {
-  const [users, setUsers] = useState<any>([]);
+  const [users, setUsers] = useState<any>({});
+  const usersRef = useRef<any>([]);
   const localVideo = useRef<any>(null);
-  const remoteVideo = useRef<any>(null);
   const socket = useRef<any>(null);
   const device = useRef<any>(null);
   const rtpCapabilities = useRef<any>(null);
@@ -59,8 +60,6 @@ const MeetRoom = () => {
   };
 
   const getLocalStream = () => {
-    console.log("golocal");
-
     navigator.mediaDevices
       .getUserMedia({ audio: true, video: true })
       .then(streamSuccess);
@@ -295,7 +294,6 @@ const MeetRoom = () => {
           return;
         }
 
-        console.log(`Consumer Params ${params}`);
         // then consume with the local consumer transport
         // which creates a consumer
         const consumer = await consumerTransport.consume({
@@ -316,30 +314,20 @@ const MeetRoom = () => {
         ];
 
         // create a new div element for the new consumer media
-        const newElem = document.createElement("div");
-        newElem.setAttribute("id", `td-${remoteProducerId}`);
+        // const newElem = document.createElement("div");
+        // newElem.setAttribute("id", `td-${remoteProducerId}`);
 
-        if (params.kind == "audio") {
-          //append to the audio container
-          newElem.innerHTML =
-            '<audio id="' + remoteProducerId + '" autoplay></audio>';
-        } else {
-          //append to the video container
-          newElem.setAttribute("class", "remoteVideo");
-          newElem.innerHTML =
-            '<video id="' +
-            remoteProducerId +
-            '" autoplay class="video" ></video>';
-        }
-
-        const app = document.getElementById("app");
-        app?.appendChild(newElem);
         // destructure and retrieve the video track from the producer
         const { track } = consumer;
-        const v: any = document.getElementById(remoteProducerId);
-        if (!v) return;
-        v.muted = true;
-        v.srcObject = new MediaStream([track]);
+        const stream = new MediaStream([track]);
+
+        setUsers((p: any) => {
+          return { ...p, [remoteProducerId]: { stream } };
+        });
+        usersRef.current = {
+          ...usersRef.current,
+          [remoteProducerId]: { stream },
+        };
 
         // the server consumer started with media paused
         // so we need to inform the server to resume
@@ -364,6 +352,10 @@ const MeetRoom = () => {
     });
 
     socket.current.on("producer-closed", ({ remoteProducerId }: any) => {
+      const copyUsers = { ...usersRef.current };
+      delete copyUsers[remoteProducerId];
+      setUsers(copyUsers);
+
       const producerTocClose = consumerTransports.current.find(
         (transportData: any) => transportData.producerId === remoteProducerId
       );
@@ -377,15 +369,18 @@ const MeetRoom = () => {
     });
   }, []);
 
-  useEffect(() => {
-    console.log(users);
-  }, [users]);
-
-  console.log("users = ", users);
-
   return (
     <div id="app">
-      <video ref={localVideo} autoPlay playsInline muted={true} />
+      <video
+        ref={localVideo}
+        autoPlay
+        playsInline
+        muted={true}
+        id="local-video"
+      />
+      {Object.keys(users).map((user) => (
+        <Users user={users[user]} key={user} id={user} />
+      ))}
       {/* <video ref={remoteVideo} autoPlay playsInline muted={true} /> */}
 
       {/* {users.map((st: any) => (
@@ -409,16 +404,3 @@ const MeetRoom = () => {
 };
 
 export default MeetRoom;
-
-const Videos = (stream: any) => {
-  const ref = useRef<any>(null);
-  useEffect(() => {
-    console.log(stream);
-    ref.current.srcObject = stream.stream;
-  }, []);
-  return (
-    <div>
-      <video ref={ref} autoPlay muted={true} />
-    </div>
-  );
-};
