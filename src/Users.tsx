@@ -5,10 +5,7 @@ const Users = ({ user, id }: any) => {
   const audioRef = useRef<null | HTMLAudioElement>(null);
 
   useEffect(() => {
-    console.log(user);
-
     const { stream } = user;
-    console.log(stream);
     if (user.stream.getVideoTracks()) {
       if (!videoRef.current) return;
       videoRef.current.srcObject = stream;
