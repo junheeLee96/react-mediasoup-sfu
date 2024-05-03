@@ -20,13 +20,13 @@ this started with dev mode on nodemon
 
 ### Prerequisites
 
-You must create ssl keys
+You must create ssl keys.
 
-You must started with HTTPS via SSL keys
+You must started with HTTPS via SSL keys.
 See the code
 
 The "option" variable of /server/server.js
-And package.json of root folder which is config to start with HTTPS
+And package.json of root folder which is config to start with HTTPS.
 
 ## Blog
 
