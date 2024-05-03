@@ -138,7 +138,6 @@ const useInitialConfig = ({ stream }: { stream: MediaStream | null }) => {
         producerTransport.current.on(
           "produce",
           async (parameters: any, callback: funcType, errback: funcType) => {
-            console.log(parameters);
             if (!socket.current) return;
             try {
               // tell the server to create a Producer
