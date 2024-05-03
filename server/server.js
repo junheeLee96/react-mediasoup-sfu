@@ -28,21 +28,7 @@ app.get("/", (req, res) => {
   res.send("hi");
 });
 
-// const connections = io.of("/mediasoup");
-
-// connections.on("connection", (socket) => {
-//   console.log("zzz");
-// });
 const connections = io.of("/mediasoup");
-
-/**
- * Worker
- * |-> Router(s)
- *     |-> Producer Transport(s)
- *         |-> Producer
- *     |-> Consumer Transport(s)
- *         |-> Consumer
- **/
 let worker;
 let rooms = {}; // { roomName1: { Router, rooms: [ sicketId1, ... ] }, ...}
 let peers = {}; // { socketId1: { roomName1, socket, transports = [id1, id2,] }, producers = [id1, id2,] }, consumers = [id1, id2,], peerDetails }, ...}

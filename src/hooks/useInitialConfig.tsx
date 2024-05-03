@@ -72,6 +72,7 @@ const useInitialConfig = ({ stream }: { stream: MediaStream | null }) => {
       "joinRoom",
       { roomName },
       (data: { rtpCapabilities: rtpCapabilitesType }) => {
+        //rtpCapabilites = router.rtp...
         rtpCapabilities.current = data.rtpCapabilities;
         createDevice();
       }
@@ -346,6 +347,7 @@ const useInitialConfig = ({ stream }: { stream: MediaStream | null }) => {
       );
     });
   }, []);
+
   return { users };
 };
 
