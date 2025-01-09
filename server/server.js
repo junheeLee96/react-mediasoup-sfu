@@ -35,8 +35,10 @@ let peers = {}; // { socketId1: { roomName1, socket, transports = [id1, id2,] },
 let transports = []; // [ { socketId1, roomName1, transport, consumer }, ... ]
 let producers = []; // [ { socketId1, roomName1, producer, }, ... ]
 let consumers = []; // [ { socketId1, roomName1, consumer, }, ... ]
+let users = {}; //
 
 const createWorker = async () => {
+  // 우커 생성, 최소/최대 포트 지정
   worker = await mediasoup.createWorker({
     rtcMinPort: 2000,
     rtcMaxPort: 2020,
@@ -44,7 +46,7 @@ const createWorker = async () => {
   console.log(`worker pid ${worker.pid}`);
 
   worker.on("died", (error) => {
-    // This implies something serious happened, so kill the application
+    // mediasoup worker가 종료되면 애플리케이션 종료
     console.error("mediasoup worker has died");
     setTimeout(() => process.exit(1), 2000); // exit in 2 seconds
   });
@@ -52,11 +54,9 @@ const createWorker = async () => {
   return worker;
 };
 
-// We create a Worker as soon as our application starts
 worker = createWorker();
 
-// This is an Array of RtpCapabilities
-// list of media codecs supported by mediasoup ...
+// 미디어 코덱 리스트, 지원 코덱 목록
 const mediaCodecs = [
   {
     kind: "audio",
@@ -75,6 +75,7 @@ const mediaCodecs = [
 ];
 
 connections.on("connection", async (socket) => {
+  users[socket.id] = {};
   const removeItems = (items, socketId, type) => {
     items.forEach((item) => {
       if (item.socketId === socket.id) {
@@ -87,7 +88,8 @@ connections.on("connection", async (socket) => {
   };
 
   socket.on("disconnect", () => {
-    // user left room
+    // 유저 나감
+    delete users[socket.id];
     consumers = removeItems(consumers, socket.id, "consumer");
     producers = removeItems(producers, socket.id, "producer");
     transports = removeItems(transports, socket.id, "transport");
@@ -98,7 +100,7 @@ connections.on("connection", async (socket) => {
     const { roomName } = peers[socket.id];
     delete peers[socket.id];
 
-    // remove socket from room
+    // 방에서 소켓 제거
     rooms[roomName] = {
       router: rooms[roomName].router,
       peers: rooms[roomName].peers.filter((socketId) => socketId !== socket.id),
@@ -106,35 +108,29 @@ connections.on("connection", async (socket) => {
   });
 
   socket.on("joinRoom", async ({ roomName }, callback) => {
-    // create Router if it does not exist
-    // const router1 = rooms[roomName] && rooms[roomName].get('data').router || await createRoom(roomName, socket.id)
+    // 라우터가 존재하는지 확인
     const router1 = await createRoom(roomName, socket.id);
 
     peers[socket.id] = {
       socket,
-      roomName, // Name for the Router this Peer joined
+      roomName, //피어가 합류한 라우터 이름
       transports: [],
       producers: [],
       consumers: [],
       peerDetails: {
         name: "",
-        isAdmin: false, // Is this Peer the Admin?
+        isAdmin: false, //피어 관리자 여부
       },
     };
 
-    // get Router RTP Capabilities
+    // Router RTP Capabilities 가져오기
     const rtpCapabilities = router1.rtpCapabilities;
 
-    // call callback from the client and send back the rtpCapabilities
+    // 클라이언트의 콜백 호출 및 rtpCapabilities 반환
     callback({ rtpCapabilities });
   });
 
   const createRoom = async (roomName, socketId) => {
-    // worker.createRouter(options)
-    // options = { mediaCodecs, appData }
-    // mediaCodecs -> defined above
-    // appData -> custom application data - we are not supplying any
-    // none of the two are required
     let router1;
     let peers = [];
     if (rooms[roomName]) {
@@ -154,16 +150,15 @@ connections.on("connection", async (socket) => {
     return router1;
   };
 
-  // Client emits a request to create server side Transport
-  // We need to differentiate between the producer and consumer transports
+  // 클라이언트가 서버 측 Transport 생성을 요청 // 프로듀서와 컨슈머 트랜스포트 구분 필요
   socket.on("createWebRtcTransport", async ({ consumer }, callback) => {
-    // get Room Name from Peer's properties
+    // 피어에서 방 이름 가져오기
     if (!peers[socket.id] || !peers[socket.id].roomName) {
       return;
     }
     const roomName = peers[socket.id].roomName;
 
-    // get Router (Room) object this peer is in based on RoomName
+    // RoomName을 기반으로 피어가 잇는 라우터 가져오기
     const router = rooms[roomName].router;
 
     createWebRtcTransport(router).then(
@@ -177,7 +172,7 @@ connections.on("connection", async (socket) => {
           },
         });
 
-        // add transport to Peer's properties
+        //피어 속성에 transport추가
         addTransport(transport, roomName, consumer);
       },
       (error) => {
@@ -208,10 +203,10 @@ connections.on("connection", async (socket) => {
   };
 
   const addConsumer = (consumer, roomName) => {
-    // add the consumer to the consumers list
+    // consumer 리스트에 추가
     consumers = [...consumers, { socketId: socket.id, consumer, roomName }];
 
-    // add the consumer id to the peers list
+    // 피어 리스트에 소비자 id 추가
     peers[socket.id] = {
       ...peers[socket.id],
       consumers: [...peers[socket.id].consumers, consumer.id],
@@ -219,7 +214,7 @@ connections.on("connection", async (socket) => {
   };
 
   socket.on("getProducers", (callback) => {
-    //return all producer transports
+    // 모든 프로듀서 트랜스포트 리턴
     const { roomName } = peers[socket.id];
 
     let producerList = [];
@@ -232,21 +227,21 @@ connections.on("connection", async (socket) => {
       }
     });
 
-    // return the producer list back to the client
+    // 클라이언트에게 프로듀서 리스트 리턴
     callback(producerList);
   });
 
   const informConsumers = (roomName, socketId, id) => {
     console.log(`just joined, id ${id} ${roomName}, ${socketId}`);
-    // A new producer just joined
-    // let all consumers to consume this producer
+    // 새 유저 참여
+    // 모든 참여자에게 프로듀서를 소비(?)하도록 알림
     producers.forEach((producerData) => {
       if (
         producerData.socketId !== socketId &&
         producerData.roomName === roomName
       ) {
         const producerSocket = peers[producerData.socketId].socket;
-        // use socket to send producer id to producer
+        //  프로듀서 id를 프로듀서에게 전송
         producerSocket.emit("new-producer", { producerId: id });
       }
     });
@@ -259,24 +254,23 @@ connections.on("connection", async (socket) => {
     return producerTransport.transport;
   };
 
-  // see client's socket.emit('transport-connect', ...)
+  // 클라이언트의 socket.emit('transport-connect', ...) 확인하셈
   socket.on("transport-connect", ({ dtlsParameters }) => {
     console.log("DTLS PARAMS... ", { dtlsParameters });
 
     getTransport(socket.id).connect({ dtlsParameters });
   });
 
-  // see client's socket.emit('transport-produce', ...)
+  // 클라이언트의 socket.emit('transport-produce', ...) 확인하셈
   socket.on(
     "transport-produce",
     async ({ kind, rtpParameters, appData }, callback) => {
-      // call produce based on the prameters from the client
+      // 클라이언트의 매게변수를 기반으로 produce호출
       const producer = await getTransport(socket.id).produce({
         kind,
         rtpParameters,
       });
 
-      // add producer to the producers array
       const { roomName } = peers[socket.id];
 
       addProducer(producer, roomName);
@@ -298,7 +292,7 @@ connections.on("connection", async (socket) => {
     }
   );
 
-  // see client's socket.emit('transport-recv-connect', ...)
+  // 클라이언트의 socket.emit('transport-recv-connect', ...)확인
   socket.on(
     "transport-recv-connect",
     async ({ dtlsParameters, serverConsumerTransportId }) => {
@@ -327,14 +321,14 @@ connections.on("connection", async (socket) => {
             transportData.transport.id == serverConsumerTransportId
         ).transport;
 
-        // check if the router can consume the specified producer
+        // 지정된 프로듀서를 소비할수잇는지 라우터 확인
         if (
           router.canConsume({
             producerId: remoteProducerId,
             rtpCapabilities,
           })
         ) {
-          // transport can now consume and return a consumer
+          // transport 사용할 수 잇으므로 consumer리턴
           const consumer = await consumerTransport.consume({
             producerId: remoteProducerId,
             rtpCapabilities,
@@ -362,8 +356,8 @@ connections.on("connection", async (socket) => {
 
           addConsumer(consumer, roomName);
 
-          // from the consumer extract the following params
-          // to send back to the Client
+          // consumer에서 다음 매개변수를 사용
+          //클라이언트에게 리턴
           const params = {
             id: consumer.id,
             producerId: remoteProducerId,
@@ -372,7 +366,6 @@ connections.on("connection", async (socket) => {
             serverConsumerId: consumer.id,
           };
 
-          // send the parameters to the client
           callback({ params });
         }
       } catch (error) {
@@ -392,6 +385,18 @@ connections.on("connection", async (socket) => {
       (consumerData) => consumerData.consumer.id === serverConsumerId
     );
     await consumer.resume();
+  });
+
+  socket.on("sounds", (event) => {
+    const date = new Date();
+    const mit = date.getMinutes();
+    const sec = date.getSeconds();
+    const millSec = date.getMilliseconds();
+    users[socket.id] = {
+      ...users[socket.id],
+      [event]: `${mit}분 ${sec}초 ${millSec}`,
+    };
+    console.log(users);
   });
 });
 

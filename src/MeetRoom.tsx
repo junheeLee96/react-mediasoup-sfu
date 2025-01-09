@@ -1,16 +1,20 @@
-import { Device } from "mediasoup-client";
 import { useEffect, useRef, useState } from "react";
-import { io } from "socket.io-client";
 import Users from "./Users";
-import { useParams } from "react-router-dom";
 import styled from "@emotion/styled";
 import useInitialConfig from "./hooks/useInitialConfig";
+import { Socket } from "socket.io-client";
+import useAudio from "./useAudio";
 
 const MeetRoom = () => {
   const localVideo = useRef<null | HTMLVideoElement>(null);
   const [stream, setStream] = useState<null | MediaStream>(null);
-  const { users } = useInitialConfig({ stream });
+  const [socket, setSocket] = useState<null | Socket>(null);
 
+  const updateSocket = (socket: Socket) => {
+    setSocket(socket);
+  };
+  const { users } = useInitialConfig({ stream, updateSocket });
+  useAudio({ stream, socket, event: "speak" });
   const getLocalStream = () => {
     navigator.mediaDevices
       .getUserMedia({
@@ -42,7 +46,7 @@ const MeetRoom = () => {
           />
         </div>
         {Object.keys(users).map((user) => (
-          <Users user={users[user]} key={user} id={user} />
+          <Users user={users[user]} key={user} id={user} socket={socket} />
         ))}
       </Container>
     </RoomStyle>

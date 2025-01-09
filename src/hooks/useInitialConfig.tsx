@@ -1,5 +1,4 @@
-// import { } from "mediasoup-client";
-import { Device, types } from "mediasoup-client";
+import { Device } from "mediasoup-client";
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { io, Socket } from "socket.io-client";
@@ -12,7 +11,12 @@ import {
   userType,
 } from "./types";
 
-const useInitialConfig = ({ stream }: { stream: MediaStream | null }) => {
+type useInitialConfigProps = {
+  stream: MediaStream | null;
+  updateSocket: (socket: Socket) => void;
+};
+
+const useInitialConfig = ({ stream, updateSocket }: useInitialConfigProps) => {
   const { roomName } = useParams();
   const [users, setUsers] = useState<userType>({});
   const usersRef = useRef<userType>({});
@@ -24,7 +28,7 @@ const useInitialConfig = ({ stream }: { stream: MediaStream | null }) => {
   const consumerTransports = useRef<consumerTransportsType[]>([]);
 
   const params = useRef<any>({
-    // mediasoup params
+    // mediasoup 인코딩 파라미터
     encodings: [
       {
         rid: "r0",
@@ -42,6 +46,7 @@ const useInitialConfig = ({ stream }: { stream: MediaStream | null }) => {
         scalabilityMode: "S1T3",
       },
     ],
+    // 코덱 옵션
     // https://mediasoup.org/documentation/v3/mediasoup-client/api/#ProducerCodecOptions
     codecOptions: {
       videoGoogleStartBitrate: 1000,
@@ -98,20 +103,20 @@ const useInitialConfig = ({ stream }: { stream: MediaStream | null }) => {
   const createSendTransport = () => {
     if (!socket.current) return;
 
-    // create sender Transport
+    //트랜스포트생성
     socket.current.emit(
       "createWebRtcTransport",
       { consumer: false },
       ({ params }: any) => {
-        // The server sends back params needed
-        // to create Send Transport on the client side
+        // 서버에서 필요한 매개변수 반환
+        // 클라이언트에서 전송 트랜스포트 생성
         if (params.error) {
           console.error(params.error);
           return;
         }
         if (!device.current) return;
 
-        // creates a new WebRTC Transport to send media
+        // 미디어 전송을 위한 새 WebRTC 트랜스포트 생성
         producerTransport.current = device.current.createSendTransport(params);
 
         // transport.produce이벤트 처음 호출 시 발동되는 이벤트 등록
@@ -140,9 +145,7 @@ const useInitialConfig = ({ stream }: { stream: MediaStream | null }) => {
           async (parameters: any, callback: funcType, errback: funcType) => {
             if (!socket.current) return;
             try {
-              // tell the server to create a Producer
-              // with the following parameters and produce
-              // and expect back a server side producer id
+              // 서버에 프로듀서 생성 요청
               await socket.current.emit(
                 "transport-produce",
                 {
@@ -175,7 +178,7 @@ const useInitialConfig = ({ stream }: { stream: MediaStream | null }) => {
   const getProducers = () => {
     if (!socket.current) return;
     socket.current.emit("getProducers", (producerIds: Array<string>) => {
-      // for each of the producer create a consumer
+      // 각 프로듀서에 consumer 생성
       producerIds.forEach(signalNewConsumerTransport);
     });
   };
@@ -192,7 +195,7 @@ const useInitialConfig = ({ stream }: { stream: MediaStream | null }) => {
       videoParams.current
     );
 
-    /* close tracks*/
+    // 트랙 종료
     audioProducer.current.on("trackended", () => {
       console.log("audio track ended");
     });
@@ -208,11 +211,10 @@ const useInitialConfig = ({ stream }: { stream: MediaStream | null }) => {
     videoProducer.current.on("transportclose", () => {
       console.log("video transport ended");
     });
-    /* close tracks*/
   };
 
   const signalNewConsumerTransport = async (remoteProducerId: string) => {
-    //check if we are already consuming the remoteProducerId
+    // remoteProducerId를 사용중인지 확인
     if (!socket.current) return;
     if (consumingTransports.current.includes(remoteProducerId)) return;
     consumingTransports.current.push(remoteProducerId);
@@ -276,7 +278,7 @@ const useInitialConfig = ({ stream }: { stream: MediaStream | null }) => {
         }
         if (!consumerTransports.current) return;
         // 로컬 consumer transport consume
-        // it will create consumer
+        // consumer 생성
         const consumer = await consumerTransport.consume({
           id: params.id,
           producerId: params.producerId,
@@ -305,8 +307,8 @@ const useInitialConfig = ({ stream }: { stream: MediaStream | null }) => {
           [remoteProducerId]: { stream },
         };
         if (!socket.current) return;
-        // the server consumer started with media paused
-        // so we need to inform the server to resume
+        // 서버에 consumer가 미디어르 일시 중단한 상태로 시작
+        // 서버에 다시 시작을 알림
         socket.current.emit("consumer-resume", {
           serverConsumerId: params.serverConsumerId,
         });
@@ -321,13 +323,13 @@ const useInitialConfig = ({ stream }: { stream: MediaStream | null }) => {
 
   useEffect(() => {
     socket.current = io("https://localhost:8000/mediasoup");
-
+    updateSocket(socket.current);
     socket.current.on("new-producer", ({ producerId }: any) => {
       signalNewConsumerTransport(producerId);
     });
 
+    //유저가 나갔을때
     socket.current.on("producer-closed", ({ remoteProducerId }: any) => {
-      //when 유저 left
       // clean up
       if (!consumerTransports.current) return;
       const copyUsers = { ...usersRef.current };

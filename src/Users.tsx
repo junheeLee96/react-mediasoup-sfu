@@ -1,8 +1,11 @@
 import React, { useEffect, useRef } from "react";
+import useAudio from "./useAudio";
 
-const Users = ({ user, id }: any) => {
+const Users = ({ socket, user, id }: any) => {
   const videoRef = useRef<null | HTMLVideoElement>(null);
   const audioRef = useRef<null | HTMLAudioElement>(null);
+
+  useAudio({ socket, stream: user.stream, event: "listen" });
 
   useEffect(() => {
     const { stream } = user;
@@ -13,7 +16,7 @@ const Users = ({ user, id }: any) => {
       if (!audioRef.current) return;
       audioRef.current.srcObject = stream;
     }
-  }, []);
+  }, [user]);
   return (
     <div>
       {user.stream.getVideoTracks() ? (
